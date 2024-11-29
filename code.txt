@@ -1,0 +1,176 @@
+import java.sql.*;
+import java.util.Scanner;
+
+public class MusicLibrarySystem {
+
+    // Database connection details
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/MusicLibrary";
+    private static final String USER = "root";
+    private static final String PASSWORD = "password";
+
+    public static void main(String[] args) {
+        try (Connection connection = DriverManager.getConnection(DB_URL, USER, PASSWORD)) {
+            System.out.println("Connected to the database!");
+
+            Scanner scanner = new Scanner(System.in);
+            int choice;
+
+            do {
+                System.out.println("\n--- Music Library System ---");
+                System.out.println("1. Browse Songs");
+                System.out.println("2. Add User");
+                System.out.println("3. View Users");
+                System.out.println("4. Create Playlist");
+                System.out.println("5. View Playlists");
+                System.out.println("6. Exit");
+                System.out.print("Enter your choice: ");
+                choice = scanner.nextInt();
+                scanner.nextLine(); // Consume newline
+
+                switch (choice) {
+                    case 1:
+                        browseSongs(connection);
+                        break;
+                    case 2:
+                        addUser(connection, scanner);
+                        break;
+                    case 3:
+                        viewUsers(connection);
+                        break;
+                    case 4:
+                        createPlaylist(connection, scanner);
+                        break;
+                    case 5:
+                        viewPlaylists(connection);
+                        break;
+                    case 6:
+                        System.out.println("Exiting...");
+                        break;
+                    default:
+                        System.out.println("Invalid choice. Please try again.");
+                }
+            } while (choice != 6);
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Browse songs in the library
+    private static void browseSongs(Connection connection) throws SQLException {
+        String query = "SELECT * FROM Songs";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            System.out.println("\n--- Songs in Library ---");
+            while (rs.next()) {
+                System.out.printf("ID: %d, Title: %s, Artist: %s, Album: %s, Genre: %s\n",
+                        rs.getInt("SongID"), rs.getString("Title"),
+                        rs.getString("Artist"), rs.getString("Album"),
+                        rs.getString("Genre"));
+            }
+        }
+    }
+
+    // Add a new user
+    private static void addUser(Connection connection, Scanner scanner) throws SQLException {
+        System.out.print("\nEnter User Name: ");
+        String userName = scanner.nextLine();
+        System.out.print("Enter Email: ");
+        String email = scanner.nextLine();
+
+        String insertUserQuery = "INSERT INTO Users (UserName, Email) VALUES (?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(insertUserQuery)) {
+            pstmt.setString(1, userName);
+            pstmt.setString(2, email);
+            pstmt.executeUpdate();
+            System.out.println("User added successfully!");
+        }
+    }
+
+    // View all users
+    private static void viewUsers(Connection connection) throws SQLException {
+        String query = "SELECT * FROM Users";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            System.out.println("\n--- Users ---");
+            while (rs.next()) {
+                System.out.printf("ID: %d, Name: %s, Email: %s\n",
+                        rs.getInt("UserID"), rs.getString("UserName"),
+                        rs.getString("Email"));
+            }
+        }
+    }
+
+    // Create a new playlist
+    private static void createPlaylist(Connection connection, Scanner scanner) throws SQLException {
+        System.out.print("\nEnter Playlist Name: ");
+        String playlistName = scanner.nextLine();
+        System.out.print("Enter User ID: ");
+        int userID = scanner.nextInt();
+        scanner.nextLine(); // Consume newline
+
+        // Check if UserID exists
+        String checkUserQuery = "SELECT * FROM Users WHERE UserID = ?";
+        try (PreparedStatement checkUserStmt = connection.prepareStatement(checkUserQuery)) {
+            checkUserStmt.setInt(1, userID);
+            try (ResultSet rs = checkUserStmt.executeQuery()) {
+                if (!rs.next()) {
+                    System.out.println("Error: User ID does not exist. Please create a user first.");
+                    return;
+                }
+            }
+        }
+
+        // Insert playlist
+        String insertPlaylistQuery = "INSERT INTO Playlists (PlaylistName, UserID) VALUES (?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(insertPlaylistQuery, Statement.RETURN_GENERATED_KEYS)) {
+            pstmt.setString(1, playlistName);
+            pstmt.setInt(2, userID);
+            pstmt.executeUpdate();
+            System.out.println("Playlist created successfully!");
+
+            // Optionally, add songs to the playlist
+            System.out.println("Add songs to the playlist? (yes/no): ");
+            String addSongs = scanner.nextLine();
+            if (addSongs.equalsIgnoreCase("yes")) {
+                addSongsToPlaylist(connection, scanner, pstmt.getGeneratedKeys().getInt(1));
+            }
+        }
+    }
+
+    // Add songs to a playlist
+    private static void addSongsToPlaylist(Connection connection, Scanner scanner, int playlistID) throws SQLException {
+        String addSongQuery = "INSERT INTO PlaylistSongs (PlaylistID, SongID) VALUES (?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(addSongQuery)) {
+            while (true) {
+                System.out.print("Enter Song ID to add (or 0 to stop): ");
+                int songID = scanner.nextInt();
+                if (songID == 0) break;
+
+                pstmt.setInt(1, playlistID);
+                pstmt.setInt(2, songID);
+                pstmt.executeUpdate();
+                System.out.println("Song added to playlist!");
+            }
+        }
+    }
+
+    // View playlists
+    private static void viewPlaylists(Connection connection) throws SQLException {
+        String query = "SELECT p.PlaylistID, p.PlaylistName, s.Title FROM Playlists p " +
+                "JOIN PlaylistSongs ps ON p.PlaylistID = ps.PlaylistID " +
+                "JOIN Songs s ON ps.SongID = s.SongID";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+
+            System.out.println("\n--- Playlists ---");
+            while (rs.next()) {
+                System.out.printf("Playlist ID: %d, Name: %s, Song: %s\n",
+                        rs.getInt("PlaylistID"), rs.getString("PlaylistName"),
+                        rs.getString("Title"));
+            }
+        }
+    }
+}
